@@ -1,5 +1,5 @@
 from ttkbootstrap import *
-
+from ttkbootstrap.tooltip import ToolTip
 import os
 from tkinter.filedialog import askopenfilename, asksaveasfilename
 
@@ -7,7 +7,7 @@ os.makedirs('settings', exist_ok=True)
 try:import settings.theme as tm
 except ModuleNotFoundError:
     with open('settings/theme.py', 'w') as f:
-        f.write('theme = "sandstone"')
+        f.write("theme = 'sandstone'")
     import settings.theme as tm
 try:import settings.last_doc as ld
 except ModuleNotFoundError:
