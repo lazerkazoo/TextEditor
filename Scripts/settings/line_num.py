@@ -1,0 +1,1 @@
+show_line_numbers = False

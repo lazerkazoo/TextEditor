@@ -1,45 +1,64 @@
 from ttkbootstrap import *
-from ttkbootstrap.tooltip import ToolTip
+
 import os
 from tkinter.filedialog import askopenfilename, asksaveasfilename
+
+os.makedirs('settings', exist_ok=True)
 try:import settings.theme as tm
 except ModuleNotFoundError:
-    os.makedirs('settings', exist_ok=True)
     with open('settings/theme.py', 'w') as f:
         f.write('theme = "sandstone"')
     import settings.theme as tm
 try:import settings.last_doc as ld
 except ModuleNotFoundError:
-    os.makedirs('settings', exist_ok=True)
     with open('settings/last_doc.py', 'w') as f:
-        f.write('last_doc = None\nremember = False')
+        f.write('last_doc = None\nremember = True')
     import settings.last_doc as ld
+try:import settings.line_num as ln
+except ModuleNotFoundError:
+    with open('settings/line_num.py', 'w') as f:
+        f.write('show_line_numbers = False')
+    import settings.line_num as ln
+try:import settings.font_size as fs
+except ModuleNotFoundError:
+    with open('settings/font_size.py', 'w') as f:
+        f.write('font_size = 12')
+    import settings.font_size as fs
 
 class TextEditor:
     def __init__(self):
-        # Initial Setup
+        # Initial Vars
+
         self.finding = False
         self.save_path = None
         self.pad = 2
         self.search_matches = []
         self.current_match_index = -1
         self.last_search = ""
-        pad = self.pad
+        self.remember_var = None
+        self.destroy_binds = ['<Escape>', '<Control-w>', '<Control-q>']
         self.window = Window(themename=tm.theme, title='Text Editor', size=(1280, 720))
+        pad = self.pad
 
         # Text Area
-        self.text_area = Text(self.window, font=('', 12))
+        self.text_area = Text(self.window, font=('', fs.font_size))
         self.text_area.pack(side='right', fill='both', expand=True, padx=pad, pady=pad)
         self.text_area.focus_set()
 
+        # Add line numbers sidebar
+        self.line_numbers = Text(self.window, width=4, border=0, state='disabled', font=('', fs.font_size))
+
         # Get Last Doc
         if ld.last_doc != None:
-            with open(ld.last_doc, 'r') as f:
-                self.text_area.insert(1.0, f.read() if ld.remember and ld.last_doc else '')
-                self.save_path = ld.last_doc if ld.remember and ld.last_doc else None
-                f.close()
-            if self.save_path:
-                self.window.title(f'Text Editor - {self.save_path}')
+            try:
+                with open(ld.last_doc, 'r') as f:
+                    self.text_area.insert(1.0, f.read() if ld.remember and ld.last_doc else '')
+                    self.save_path = ld.last_doc if ld.remember and ld.last_doc else None
+                    f.close()
+                if self.save_path:
+                    self.window.title(f'Text Editor - {self.save_path}')
+            except FileNotFoundError:
+                pass
 
         # Sidebar Stuff
         self.sidebar = Frame(self.window)
@@ -60,6 +79,10 @@ class TextEditor:
         settings_btn = Button(self.sidebar, text='Settings', command=self.open_settings)
         settings_btn.pack(padx=pad, pady=pad, fill='x', side='bottom')
 
+        # Pack line Numbers
+        if ln.show_line_numbers:
+            self.line_numbers.pack(side='left', fill='y', padx=pad, pady=pad)
+
         # Tooltips
         ToolTip(save_btn, text='Save File (CTRL+S)', bootstyle='info', delay=500, position='bottom right')
         ToolTip(open_btn, text='Open File (CTRL+O)', bootstyle='info', delay=500, position='bottom right')
@@ -79,8 +102,11 @@ class TextEditor:
 
         self.window.bind('<Control-f>', lambda _: self.find_text())
 
+        self.text_area.bind('<KeyRelease>', lambda _: self.update_line_numbers())
+
         self.window.protocol("WM_DELETE_WINDOW", self.exit)
 
+        self.update_line_numbers()
         self.window.mainloop()
 
     def save_file(self):
@@ -104,7 +130,6 @@ class TextEditor:
         with open(self.save_path, 'w') as file:
             content = self.text_area.get(1.0, 'end')
             file.write(content)
-        print(self.save_path)
 
     def open_file(self):
         file_path = askopenfilename(filetypes=[('Text Files', '*.txt'), ('All Files', '*.*'), ('Python Files', '*.py')])
@@ -118,7 +143,6 @@ class TextEditor:
             self.text_area.insert(1.0, content)
             self.window.title(f'Text Editor - {file_path}')
             self.save_path = file_path
-        print(self.save_path)
 
     def exit(self):
         # Check if current content matches saved content
@@ -170,32 +194,82 @@ class TextEditor:
 
     def open_settings(self):
 
-        self.destroy_binds = ['<Escape>', '<Control-w>', '<Control-q>']
+        settings_popup = Toplevel(title='Settings')
 
+        # Theme Stuff
         def change_theme():
             with open('settings/theme.py', 'w') as f:
                 f.write(f'theme = "{theme_var.get()}"')
 
             self.window.style.theme_use(theme_var.get())
 
-        settings_popup = Toplevel(title='Settings', size=(300, 200))
-
-        # Theme Stuff
-        theme_frame = LabelFrame(settings_popup, text='Theme')
         themes = ['sandstone', 'flatly', 'darkly', 'cyborg', 'superhero', 'vapor', 'minty', 'pulse', 'solar']
+
+        theme_frame = LabelFrame(settings_popup, text='Theme')
 
         theme_var = StringVar(value=self.window.style.theme_use())
         theme_combo = Combobox(theme_frame, values=themes, textvariable=theme_var, state='readonly')
 
-        apply_btn = Button(theme_frame, text='Apply Theme', command=change_theme)
-
         theme_combo.pack(padx=self.pad, pady=self.pad, fill='x')
-        apply_btn.pack(padx=self.pad, pady=self.pad, fill='x')
         theme_frame.pack(padx=self.pad, pady=self.pad, fill='x')
+
+        # Show Line Stuff
+        def change_line_numbers():
+            show_lns = show_line_var.get()
+            ln.show_line_numbers = show_lns
+            self.update_line_numbers()
+            with open('settings/line_num.py', 'w') as f:
+                f.write(f'show_line_numbers = {show_line_var.get()}')
+                f.close()
+            if show_lns:
+                self.line_numbers.pack(side='left', fill='y', padx=self.pad, pady=self.pad)
+            else:
+                self.line_numbers.pack_forget()
+
+        show_line_frame = LabelFrame(settings_popup, text='Show Line Numbers')
+        show_line_var = BooleanVar(value=ln.show_line_numbers)
+        show_line_check = Checkbutton(show_line_frame, text='Show Line Numbers', variable=show_line_var, bootstyle='square-toggle')
+
+        show_line_check.pack(padx=self.pad, pady=self.pad, fill='x')
+        show_line_frame.pack(padx=self.pad, pady=self.pad, fill='x')
+
+        # Font Size
+        def update_font_size():
+            font_size = self.font_var.get()
+            with open('settings/font_size.py', 'w') as f:
+                f.write(f'font_size = {font_size}')
+            for item in items_to_change_font:
+                item.config(font=('', font_size))
+            size_entry.delete(0, END)
+            size_entry.insert(0, f'{font_size}')
+            f.close()
+
+        items_to_change_font = [self.text_area, self.line_numbers]
+
+        font_frame = LabelFrame(settings_popup, text='Font Size')
+        self.font_var = IntVar(value=fs.font_size)
+        font_size = self.font_var.get()
+        font_scale = Scale(font_frame, from_=8, to=24, orient='horizontal', variable=self.font_var, command=lambda _: self.font_var.set(round(font_scale.get())))
+        size_entry = Entry(font_frame, textvariable=self.font_var, width=5)
+
+        font_scale.pack(padx=self.pad, pady=self.pad, fill='x')
+        size_entry.pack(padx=self.pad, pady=self.pad, fill='x', side='left', expand=True)
+        font_frame.pack(padx=self.pad, pady=self.pad, fill='x')
+
+        # Apply all
+        def apply_all_settings():
+            stuff_to_apply = [update_font_size, change_theme, change_line_numbers]
+            for func in stuff_to_apply:
+                func()
+
+        apply_all_btn = Button(settings_popup, text='Apply All', command=apply_all_settings)
+        apply_all_btn.pack(padx=self.pad, pady=self.pad, fill='x')
+
 
         # Bindings
         for bind in self.destroy_binds:
             settings_popup.bind(bind, lambda _: settings_popup.destroy())
+        settings_popup.bind('<Return>', lambda _: apply_all_settings())
 
         settings_popup.focus_force()
         settings_popup.mainloop()
@@ -413,6 +487,12 @@ class TextEditor:
         """Clear all search highlights from the text area"""
         self.text_area.tag_remove("search_match", 1.0, 'end')
         self.text_area.tag_remove("current_match", 1.0, 'end')
+
+    def update_line_numbers(self):
+        self.line_numbers.configure(state='normal')
+        self.line_numbers.delete(1.0, 'end')
+        self.line_numbers.insert(1.0, '\n'.join(str(i) for i in range(1, len(self.text_area.get('1.0', 'end').split('\n')))))
+        self.line_numbers.configure(state='disabled')
 
 def main():
     editor = TextEditor()
