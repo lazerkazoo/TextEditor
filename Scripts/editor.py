@@ -1,59 +1,40 @@
 from ttkbootstrap import *
 from ttkbootstrap.tooltip import ToolTip
+from configparser import ConfigParser
 import os
 from tkinter.filedialog import askopenfilename, asksaveasfilename
 
-os.makedirs('settings', exist_ok=True)
-try:import settings.theme as tm
-except ModuleNotFoundError:
-    with open('settings/theme.py', 'w') as f:
-        f.write("theme = 'sandstone'")
-    import settings.theme as tm
-try:import settings.last_doc as ld
-except ModuleNotFoundError:
-    with open('settings/last_doc.py', 'w') as f:
-        f.write('last_doc = None\nremember = True')
-    import settings.last_doc as ld
-try:import settings.line_num as ln
-except ModuleNotFoundError:
-    with open('settings/line_num.py', 'w') as f:
-        f.write('show_line_numbers = False')
-    import settings.line_num as ln
-try:import settings.font_size as fs
-except ModuleNotFoundError:
-    with open('settings/font_size.py', 'w') as f:
-        f.write('font_size = 12')
-    import settings.font_size as fs
 
 class TextEditor:
     def __init__(self):
         # Initial Vars
-
+        self.config = ConfigParser()
+        self.update_config()
         self.finding = False
         self.save_path = None
-        self.pad = 2
+        self.pad = self.config.getint('Editor', 'pad')
         self.search_matches = []
         self.current_match_index = -1
         self.last_search = ""
         self.remember_var = None
         self.destroy_binds = ['<Escape>', '<Control-w>', '<Control-q>']
-        self.window = Window(themename=tm.theme, title='Text Editor', size=(1280, 720))
+        self.window = Window(themename=self.config.get('Editor', 'theme'), title='Text Editor', size=(1280, 720))
         pad = self.pad
 
         # Text Area
-        self.text_area = Text(self.window, font=('', fs.font_size))
+        self.text_area = Text(self.window, font=('', self.config.getint('Editor', 'font_size')))
         self.text_area.pack(side='right', fill='both', expand=True, padx=pad, pady=pad)
         self.text_area.focus_set()
 
         # Add line numbers sidebar
-        self.line_numbers = Text(self.window, width=4, border=0, state='disabled', font=('', fs.font_size))
+        self.line_numbers = Text(self.window, width=4, border=0, state='disabled', font=('', self.config.getint('Editor', 'font_size')))
 
         # Get Last Doc
-        if ld.last_doc != None:
+        if self.config.get('Editor', 'last_doc') != None:
             try:
-                with open(ld.last_doc, 'r') as f:
-                    self.text_area.insert(1.0, f.read() if ld.remember and ld.last_doc else '')
-                    self.save_path = ld.last_doc if ld.remember and ld.last_doc else None
+                with open(self.config.get('Editor', 'last_doc'), 'r') as f:
+                    self.text_area.insert(1.0, f.read() if self.config.getboolean('Editor', 'remember') and self.config.get('Editor', 'last_doc') else '')
+                    self.save_path = self.config.get('Editor', 'last_doc') if self.config.getboolean('Editor', 'remember') and self.config.get('Editor', 'last_doc') else None
                     f.close()
                 if self.save_path:
                     self.window.title(f'Text Editor - {self.save_path}')
@@ -80,7 +61,7 @@ class TextEditor:
         settings_btn.pack(padx=pad, pady=pad, fill='x', side='bottom')
 
         # Pack line Numbers
-        if ln.show_line_numbers:
+        if self.config.getboolean('Editor', 'line_numbers'):
             self.line_numbers.pack(side='left', fill='y', padx=pad, pady=pad)
 
         # Tooltips
@@ -145,6 +126,7 @@ class TextEditor:
             self.save_path = file_path
 
     def exit(self):
+        config = self.config
         # Check if current content matches saved content
         current_content = self.text_area.get(1.0, 'end-1c')
         if self.save_path:
@@ -169,17 +151,19 @@ class TextEditor:
 
         def remember_last_doc():
             if self.remember_var == None:
-                self.remember_var = BooleanVar(value=ld.remember)
-            with open('settings/last_doc.py', 'w') as f:
+                self.remember_var = BooleanVar(value=config.getboolean('Editor', 'remember'))
+            with open('settings.conf', 'w') as f:
                 if self.remember_var.get():
-                    f.write(f'last_doc = "{self.save_path}"\nremember = {self.remember_var.get()}')
+                    config.set('Editor', 'last_doc', self.save_path)
                 else:
-                    f.write('last_doc = None\nremember = False')
+                    config.set('Editor', 'last_doc', None)
+                config.set('Editor', 'remember', str(self.remember_var.get()))
+                config.write(f)
 
         exit_popup = Toplevel(title='Exit')
         exit_popup.title('Exit')
 
-        self.remember_var = BooleanVar(value=ld.remember)
+        self.remember_var = BooleanVar(value=config.getboolean('Editor', 'remember'))
         # Add Widgets
         Checkbutton(exit_popup, text='Remember Last Document', variable=self.remember_var, command=remember_last_doc).pack(padx=self.pad, pady=self.pad, fill='x', side='bottom')
         Label(exit_popup, text='Are you sure you want to exit?').pack(side='top', expand=True, fill='x', padx=self.pad, pady=self.pad)
@@ -194,12 +178,14 @@ class TextEditor:
 
     def open_settings(self):
 
+        config = self.config
         settings_popup = Toplevel(title='Settings')
 
         # Theme Stuff
         def change_theme():
-            with open('settings/theme.py', 'w') as f:
-                f.write(f'theme = "{theme_var.get()}"')
+            config.set('Editor', 'theme', theme_var.get())
+            with open('settings.conf', 'w') as f:
+                config.write(f)
 
             self.window.style.theme_use(theme_var.get())
 
@@ -216,18 +202,17 @@ class TextEditor:
         # Show Line Stuff
         def change_line_numbers():
             show_lns = show_line_var.get()
-            ln.show_line_numbers = show_lns
+            config.set('Editor', 'line_numbers', str(show_lns))
             self.update_line_numbers()
-            with open('settings/line_num.py', 'w') as f:
-                f.write(f'show_line_numbers = {show_line_var.get()}')
-                f.close()
+            with open('settings.conf', 'w') as f:
+                config.write(f)
             if show_lns:
                 self.line_numbers.pack(side='left', fill='y', padx=self.pad, pady=self.pad)
             else:
                 self.line_numbers.pack_forget()
 
         show_line_frame = LabelFrame(settings_popup, text='Show Line Numbers')
-        show_line_var = BooleanVar(value=ln.show_line_numbers)
+        show_line_var = BooleanVar(value=config.getboolean('Editor', 'line_numbers'))
         show_line_check = Checkbutton(show_line_frame, text='Show Line Numbers', variable=show_line_var, bootstyle='square-toggle')
 
         show_line_check.pack(padx=self.pad, pady=self.pad, fill='x')
@@ -235,9 +220,10 @@ class TextEditor:
 
         # Font Size
         def update_font_size():
-            font_size = self.font_var.get()
-            with open('settings/font_size.py', 'w') as f:
-                f.write(f'font_size = {font_size}')
+            font_size = font_var.get()
+            config.set('Editor', 'font_size', str(font_size))
+            with open('settings.conf', 'w') as f:
+                config.write(f)
             for item in items_to_change_font:
                 item.config(font=('', font_size))
             size_entry.delete(0, END)
@@ -247,18 +233,34 @@ class TextEditor:
         items_to_change_font = [self.text_area, self.line_numbers]
 
         font_frame = LabelFrame(settings_popup, text='Font Size')
-        self.font_var = IntVar(value=fs.font_size)
-        font_size = self.font_var.get()
-        font_scale = Scale(font_frame, from_=8, to=24, orient='horizontal', variable=self.font_var, command=lambda _: self.font_var.set(round(font_scale.get())))
-        size_entry = Entry(font_frame, textvariable=self.font_var, width=5)
+        font_var = IntVar(value=config.getint('Editor', 'font_size'))
+        font_size = font_var.get()
+        font_scale = Scale(font_frame, from_=8, to=24, orient='horizontal', variable=font_var, command=lambda _: font_var.set(round(font_scale.get())))
+        size_entry = Entry(font_frame, width=5, textvariable=font_var)
 
         font_scale.pack(padx=self.pad, pady=self.pad, fill='x')
         size_entry.pack(padx=self.pad, pady=self.pad, fill='x', side='left', expand=True)
         font_frame.pack(padx=self.pad, pady=self.pad, fill='x')
 
+        # Padding
+        def update_padding():
+            config.set('Editor', 'pad', str(pad_var.get()))
+            with open('settings.conf', 'w') as configfile:
+                config.write(configfile)
+
+        padding_frame = LabelFrame(settings_popup, text='Padding (Restart Required)')
+
+        pad_var = IntVar(value=config.getint('Editor', 'pad'))
+        pad_scale = Scale(padding_frame, from_=0, to=20, orient='horizontal', variable=pad_var, command=lambda _: pad_var.set(round(pad_scale.get())))
+        pad_entry = Entry(padding_frame, width=5, textvariable=pad_var)
+
+        pad_scale.pack(padx=self.pad, pady=self.pad, fill='x')
+        pad_entry.pack(padx=self.pad, pady=self.pad, fill='x', side='left', expand=True)
+        padding_frame.pack(padx=self.pad, pady=self.pad, fill='x')
+
         # Apply all
         def apply_all_settings():
-            stuff_to_apply = [update_font_size, change_theme, change_line_numbers]
+            stuff_to_apply = [update_font_size, change_theme, change_line_numbers, update_padding]
             for func in stuff_to_apply:
                 func()
 
@@ -493,6 +495,31 @@ class TextEditor:
         self.line_numbers.delete(1.0, 'end')
         self.line_numbers.insert(1.0, '\n'.join(str(i) for i in range(1, len(self.text_area.get('1.0', 'end').split('\n')))))
         self.line_numbers.configure(state='disabled')
+
+    def update_config(self):
+        config = self.config
+        if os.path.exists('settings.conf'):
+            pass
+        else:
+            with open('settings.conf', 'w') as f:
+                f.write('')
+                f.close()
+
+        config.read('settings.conf')
+
+        # Only add section and set defaults if section doesn't exist
+        if not config.has_section('Editor'):
+            config.add_section('Editor')
+            config.set('Editor', 'theme', 'sandstone')
+            config.set('Editor', 'font_size', '12')
+            config.set('Editor', 'pad', '2')
+            config.set('Editor', 'line_numbers', 'False')
+            config.set('Editor', 'last_doc', '')
+            config.set('Editor', 'remember', 'False')
+
+        with open('settings.conf', 'w') as f:
+            config.write(f)
+            f.close()
 
 def main():
     editor = TextEditor()
